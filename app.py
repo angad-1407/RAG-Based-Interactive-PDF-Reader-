@@ -81,7 +81,17 @@ def build_vectorstore(
         chunk_overlap=chunk_overlap,
         separators=["\n\n", "\n", ".", " ", ""],
     )
-    chunks = splitter.split_documents(pages)
+    chunks = [
+        chunk
+        for chunk in splitter.split_documents(pages)
+        if chunk.page_content and chunk.page_content.strip()
+    ]
+
+    if not chunks:
+        raise ValueError(
+            "No extractable text was found in this PDF. It may be scanned or image-based, "
+            "so OCR is needed before it can be searched."
+        )
 
     embeddings = make_embeddings(provider, embedding_model)
     vectorstore = FAISS.from_documents(chunks, embeddings)
@@ -172,10 +182,12 @@ with st.sidebar:
     temperature = st.slider("Creativity", 0.0, 1.0, 0.1, 0.1)
 
     st.header("Model")
-    provider_default = 0 if os.getenv("AI_PROVIDER", "Google Gemini") == "Google Gemini" else 1
+    providers = ["Google Gemini"]
+    provider_default = 0
     provider = st.selectbox(
         "Provider",
         ["Google Gemini"],
+        providers,
         index=provider_default,
     )
     chat_model = st.text_input("Chat model", value=default_chat_model(provider))
@@ -216,15 +228,27 @@ if st.session_state.active_digest != settings_key:
 
 pdf_bytes = uploaded_pdf.getvalue()
 
-with st.spinner("Reading and indexing the PDF..."):
-    vectorstore, pages, chunk_count = build_vectorstore(
-        pdf_bytes,
-        uploaded_pdf.name,
-        chunk_size,
-        chunk_overlap,
-        provider,
-        embedding_model,
+try:
+    with st.spinner("Reading and indexing the PDF..."):
+        vectorstore, pages, chunk_count = build_vectorstore(
+            pdf_bytes,
+            uploaded_pdf.name,
+            chunk_size,
+            chunk_overlap,
+            provider,
+            embedding_model,
+        )
+except ValueError as error:
+    st.error(str(error))
+    st.stop()
+except Exception as error:
+    st.error(
+        "The PDF could not be indexed. Check your API key, model names, and whether "
+        "the uploaded file contains selectable text."
     )
+    with st.expander("Error details"):
+        st.code(str(error))
+    st.stop()
 
 reader_col, chat_col = st.columns([0.9, 1.1], gap="large")
 
