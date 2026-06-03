@@ -186,7 +186,6 @@ with st.sidebar:
     provider_default = 0
     provider = st.selectbox(
         "Provider",
-        ["Google Gemini"],
         providers,
         index=provider_default,
     )
